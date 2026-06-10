@@ -1,0 +1,189 @@
+You are an expert C Software Architect and Graphics Programmer.
+
+Design and implement a highly original, professional-grade Menu-Driven 2D Graphics Editor in C using a 2D character array as the drawing canvas. The project must be significantly different from common student submissions and demonstrate advanced programming concepts.
+
+PROJECT TITLE:
+ASCII Graphics Studio Pro
+
+MAIN REQUIREMENTS:
+
+* Use a 2D character array as the drawing canvas.
+* Initialize canvas with '_' characters.
+* Draw objects using '*' characters.
+* Menu-driven interface.
+* Support Add, Delete, Modify, Search, and Display operations.
+
+SHAPES TO IMPLEMENT:
+
+1. Rectangle
+2. Circle
+3. Triangle
+4. Line
+5. Ellipse
+6. Polygon (Bonus)
+
+DRAWING ALGORITHMS:
+
+* Bresenham's Line Algorithm
+* Midpoint Circle Algorithm
+* Scanline Fill Algorithm
+* Polygon Edge Drawing Algorithm
+
+OBJECT MANAGEMENT SYSTEM:
+
+* Every object must have:
+
+  * Unique Object ID
+  * Shape Type
+  * Position Coordinates
+  * Size Parameters
+  * Creation Timestamp
+  * Layer Number
+  * Visibility Status
+  * Drawing Character
+* Store all objects using structures.
+* Maintain an object registry.
+
+ADVANCED FEATURES:
+
+A. LAYER MANAGEMENT
+
+* Create multiple layers.
+* Move objects between layers.
+* Hide/Show layers.
+* Render layers in order.
+
+B. OBJECT TRANSFORMATIONS
+
+* Move Object
+* Resize Object
+* Scale Object
+* Rotate Triangle
+* Mirror Shape Horizontally
+* Mirror Shape Vertically
+
+C. HISTORY MANAGEMENT
+
+* Undo
+* Redo
+* Operation Log
+* Action History Viewer
+
+D. FILE MANAGEMENT
+
+* Save Project
+* Load Project
+* Export Canvas to Text File
+* Backup Project Automatically
+
+E. EDITOR TOOLS
+
+* Selection Tool
+* Copy Object
+* Paste Object
+* Duplicate Object
+* Delete Multiple Objects
+* Group Objects
+
+F. VISUAL FEATURES
+
+* Grid View ON/OFF
+* Coordinate Display
+* Border Rendering
+* Multiple Drawing Symbols
+* Hollow Shapes
+* Filled Shapes
+
+G. ANALYTICS DASHBOARD
+Display:
+
+* Total Objects
+* Total Layers
+* Canvas Utilization Percentage
+* Most Used Shape
+* Drawing Complexity Score
+* Memory Usage Estimate
+
+H. SEARCH SYSTEM
+
+* Search by Object ID
+* Search by Shape Type
+* Search by Layer
+* Search by Position
+
+I. PROFESSIONAL USER INTERFACE
+Main Menu:
+
+1. Draw Shapes
+2. Edit Shapes
+3. Transform Shapes
+4. Layer Management
+5. File Operations
+6. Analytics Dashboard
+7. Search Objects
+8. Display Canvas
+9. Help
+10. Exit
+
+PROGRAMMING REQUIREMENTS:
+
+* Modular Programming
+* Dynamic Memory Allocation
+* Structures and Nested Structures
+* File Handling
+* Header Files
+* Function Pointers where applicable
+* Error Handling
+* Input Validation
+* Clean Code Standards
+
+PROJECT STRUCTURE:
+
+ASCII_Graphics_Studio/
+│
+├── main.c
+├── graphics.c
+├── graphics.h
+├── object_manager.c
+├── object_manager.h
+├── file_manager.c
+├── file_manager.h
+├── layer_manager.c
+├── layer_manager.h
+├── analytics.c
+├── analytics.h
+├── utils.c
+├── utils.h
+├── data/
+├── screenshots/
+└── README.md
+
+README SHOULD INCLUDE:
+
+* Project Overview
+* Problem Statement
+* Features
+* Algorithms Used
+* Data Structures
+* System Architecture
+* Compilation Instructions
+* Sample Outputs
+* Screenshots
+* Future Enhancements
+
+ADDITIONAL REQUIREMENTS FOR UNIQUENESS:
+
+* Use ncurses for professional console menus.
+* Include keyboard shortcuts.
+* Add welcome splash screen.
+* Add loading animation.
+* Add status bar showing current layer and selected object.
+* Add object locking/unlocking.
+* Add auto-save after every operation.
+* Add command history.
+
+GITHUB REQUIREMENTS:
+Generate a realistic 20-day development roadmap with daily commits showing progressive implementation. Each commit should represent meaningful development work.
+
+OUTPUT:
+Provide complete production-quality code, explanations, architecture diagrams in ASCII format, documentation, test cases, and sample executions. The final solution should look like a mini console version of a professional graphics editor rather than a typical academic assignment.
