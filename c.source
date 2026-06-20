@@ -1,0 +1,1268 @@
+define _CRT_SECURE_NO_WARNINGS
+#include "graphics.h"
+#include "object_manager.h"
+#include "layer_manager.h"
+#include "file_manager.h"
+#include "analytics.h"
+#include "utils.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+/* Global configuration */
+int border_rendering_enabled = 1;
+
+/* Forward declarations for menus */
+void menu_draw_shapes(void);
+void menu_edit_shapes(void);
+void menu_transform_shapes(void);
+void menu_layer_management(void);
+void menu_file_operations(void);
+void menu_analytics(void);
+void menu_search(void);
+void menu_display_canvas_interactive(void);
+void menu_help(void);
+
+/* Helper to draw application header */
+void draw_app_header(const char *subtitle) {
+    term_clear();
+    term_set_color(TERM_COLOR_CYAN, TERM_COLOR_BLACK);
+    printf("================================================================================\n");
+    printf("                        * ASCII GRAPHICS STUDIO PRO v1.0 *                     \n");
+    printf("================================================================================\n");
+    if (subtitle && strlen(subtitle) > 0) {
+        term_set_color(TERM_COLOR_YELLOW, TERM_COLOR_BLACK);
+        int pad = (80 - (int)strlen(subtitle)) / 2;
+        for (int i = 0; i < pad; i++) printf(" ");
+        printf("%s\n", subtitle);
+        term_set_color(TERM_COLOR_CYAN, TERM_COLOR_BLACK);
+        printf("--------------------------------------------------------------------------------\n");
+    }
+    term_reset_color();
+}
+
+int main(int argc, char **argv) {
+    /* Set up terminal environment */
+    term_init();
+    
+    /* Initialize default state */
+    graphics_init_canvas();
+    layer_init_default();
+    
+    /* If test flag is passed, run automated verification instead of UI */
+    if (argc > 1 && strcmp(argv[1], "--test") == 0) {
+        printf("Running automated unit verification tests...\n");
+        int errs = 0;
+        
+        /* Check canvas init */
+        graphics_init_canvas();
+        if (graphics_get_pixel(10, 10) != '_') {
+            printf("[FAIL] Canvas initialization error\n");
+            errs++;
+        }
+        
+        /* Check Line drawing */
+        graphics_draw_line(0, 0, 5, 0, '*');
+        for (int i = 0; i <= 5; i++) {
+            if (graphics_get_pixel(i, 0) != '*') {
+                printf("[FAIL] Bresenham Line drawing failed at (%d, 0)\n", i);
+                errs++;
+            }
+        }
+        
+        /* Check Object registration */
+        int line_id = obj_create_line(0, 0, 10, 10, '#', 0);
+        if (line_id <= 0 || object_count != 1) {
+            printf("[FAIL] Object creation registered incorrectly\n");
+            errs++;
+        }
+        
+        /* Check composition render */
+        compositor_render();
+        if (graphics_get_pixel(0, 0) != '#' || graphics_get_pixel(10, 10) != '#') {
+            printf("[FAIL] Canvas composition rendering failed\n");
+            errs++;
+        }
+        
+        /* Check translation */
+        CanvasObject *o = obj_find_by_id(line_id);
+        obj_translate(o, 2, 2);
+        if (o->params.line.p1.x != 2 || o->params.line.p2.x != 12) {
+            printf("[FAIL] Object translation translation logic failed\n");
+            errs++;
+        }
+        
+        /* Check history undo/redo */
+        obj_history_save();
+        obj_translate(o, 5, 5);
+        obj_history_undo();
+        if (o->params.line.p1.x != 2) {
+            printf("[FAIL] Undo mechanism failed to restore coordinate state\n");
+            errs++;
+        }
+        
+        /* Check serialization */
+        file_save_project("data/test_project.aststudio");
+        obj_clear_all();
+        file_load_project("data/test_project.aststudio");
+        if (object_count != 1 || object_registry[0].id != line_id) {
+            printf("[FAIL] Deserialization failure\n");
+            errs++;
+        }
+        
+        printf("Verification results: %d Errors detected.\n", errs);
+        term_shutdown();
+        return errs == 0 ? 0 : 1;
+    }
+    
+    /* Splash sequence */
+    term_splash_screen();
+    
+    char choice_str[16];
+    int choice = 0;
+    
+    while (1) {
+        draw_app_header("MAIN NAVIGATION");
+        
+        term_set_color(TERM_COLOR_GREEN, TERM_COLOR_BLACK);
+        printf("  1. Draw Shapes          [Create Lines, Circles, Rectangles, Ellipses, Triangles]\n");
+        printf("  2. Edit Shapes          [Modify drawing characters, toggle hollow/filled, etc.]\n");
+        printf("  3. Transform Shapes     [Translate, scale, resize, rotate, mirror H/V]\n");
+        printf("  4. Layer Management     [Add layers, toggle visibility, change order]\n");
+        printf("  5. File Operations      [Save/Load projects, export canvas text, backup]\n");
+        printf("  6. Analytics Dashboard  [Canvas statistics, complexity, memory calculation]\n");
+        printf("  7. Search Objects       [Query registry by ID, layer, type, coordinates]\n");
+        printf("  8. DISPLAY CANVAS (GUI) [Interactive Vector Graphics Canvas Editor]\n");
+        printf("  9. Help Guide           [Keyboard shortcuts & system overview]\n");
+        term_set_color(TERM_COLOR_RED, TERM_COLOR_BLACK);
+        printf("  10. Exit Studio\n\n");
+        
+        term_set_color(TERM_COLOR_WHITE, TERM_COLOR_BLACK);
+        printf("Select option (1-10): ");
+        term_flush();
+        
+        int r = term_dialog_input("Navigation", "Enter main menu choice (1-10):", choice_str, sizeof(choice_str));
+        if (r <= 0) continue;
+        
+        if (!parse_int(choice_str, &choice) || !validate_range(choice, 1, 10)) {
+            term_dialog_message("Input Error", "Please enter a valid choice between 1 and 10.");
+            continue;
+        }
+        
+        if (choice == 10) {
+            if (term_dialog_confirm("Exit Confirmation", "Are you sure you want to quit? Unsaved progress will be lost.")) {
+                break;
+            }
+            continue;
+        }
+        
+        switch (choice) {
+            case 1: menu_draw_shapes(); break;
+            case 2: menu_edit_shapes(); break;
+            case 3: menu_transform_shapes(); break;
+            case 4: menu_layer_management(); break;
+            case 5: menu_file_operations(); break;
+            case 6: menu_analytics(); break;
+            case 7: menu_search(); break;
+            case 8: menu_display_canvas_interactive(); break;
+            case 9: menu_help(); break;
+        }
+    }
+    
+    term_shutdown();
+    return 0;
+}
+
+void menu_draw_shapes(void) {
+    char shape_choice[16];
+    draw_app_header("DRAW SHAPES");
+    
+    printf("Select shape type to draw:\n");
+    printf("  1. Line (Bresenham)\n");
+    printf("  2. Rectangle\n");
+    printf("  3. Circle (Midpoint)\n");
+    printf("  4. Triangle\n");
+    printf("  5. Ellipse (Midpoint)\n");
+    printf("  6. Polygon (Scanline Fill)\n");
+    printf("  7. Return to main menu\n\n");
+    
+    int r = term_dialog_input("Draw Shapes", "Enter shape index (1-7):", shape_choice, sizeof(shape_choice));
+    if (r <= 0) return;
+    
+    int choice = 0;
+    if (!parse_int(shape_choice, &choice) || !validate_range(choice, 1, 7)) {
+        term_dialog_message("Input Error", "Invalid choice. Returning to main menu.");
+        return;
+    }
+    if (choice == 7) return;
+    
+    char draw_char_str[16] = "*";
+    term_dialog_input("Draw Character", "Enter character to draw shape (default '*'):", draw_char_str, sizeof(draw_char_str));
+    char draw_char = (strlen(draw_char_str) > 0) ? draw_char_str[0] : '*';
+    
+    int fill = 0;
+    if (choice >= 2 && choice <= 6) {
+        fill = term_dialog_confirm("Fill Shape", "Do you want a FILLED shape (Yes) or HOLLOW shape (No)?");
+    }
+    
+    char input_buf[64];
+    
+    if (choice == 1) { /* Line */
+        int x1 = 0, y1 = 0, x2 = 0, y2 = 0;
+        
+        term_dialog_input("Line Start Point", "Enter x1 y1 (e.g. 10 5):", input_buf, sizeof(input_buf));
+        if (sscanf(input_buf, "%d %d", &x1, &y1) != 2 || !validate_range(x1, 0, CANVAS_WIDTH-1) || !validate_range(y1, 0, CANVAS_HEIGHT-1)) {
+            term_dialog_message("Coordinate Error", "Coordinates out of bounds."); return;
+        }
+        
+        term_dialog_input("Line End Point", "Enter x2 y2 (e.g. 30 18):", input_buf, sizeof(input_buf));
+        if (sscanf(input_buf, "%d %d", &x2, &y2) != 2 || !validate_range(x2, 0, CANVAS_WIDTH-1) || !validate_range(y2, 0, CANVAS_HEIGHT-1)) {
+            term_dialog_message("Coordinate Error", "Coordinates out of bounds."); return;
+        }
+        
+        int id = obj_create_line(x1, y1, x2, y2, draw_char, active_layer_id);
+        if (id > 0) {
+            selected_object_id = id;
+            file_trigger_autosave();
+            term_dialog_message("Success", "Line registered successfully! View in display canvas.");
+        }
+    }
+    else if (choice == 2) { /* Rectangle */
+        int x = 0, y = 0, w = 0, h = 0;
+        
+        term_dialog_input("Rectangle Origin", "Enter top-left coordinate x y (e.g. 5 3):", input_buf, sizeof(input_buf));
+        if (sscanf(input_buf, "%d %d", &x, &y) != 2 || !validate_range(x, 0, CANVAS_WIDTH-1) || !validate_range(y, 0, CANVAS_HEIGHT-1)) {
+            term_dialog_message("Coordinate Error", "Coordinates out of bounds."); return;
+        }
+        
+        term_dialog_input("Rectangle Size", "Enter width and height (e.g. 20 8):", input_buf, sizeof(input_buf));
+        if (sscanf(input_buf, "%d %d", &w, &h) != 2 || w <= 0 || h <= 0) {
+            term_dialog_message("Input Error", "Width and height must be positive."); return;
+        }
+        
+        int id = obj_create_rectangle(x, y, w, h, draw_char, active_layer_id, fill);
+        if (id > 0) {
+            selected_object_id = id;
+            file_trigger_autosave();
+            term_dialog_message("Success", "Rectangle registered successfully!");
+        }
+    }
+    else if (choice == 3) { /* Circle */
+        int xc = 0, yc = 0, r = 0;
+        
+        term_dialog_input("Circle Center", "Enter center coordinate x y (e.g. 40 12):", input_buf, sizeof(input_buf));
+        if (sscanf(input_buf, "%d %d", &xc, &yc) != 2 || !validate_range(xc, 0, CANVAS_WIDTH-1) || !validate_range(yc, 0, CANVAS_HEIGHT-1)) {
+            term_dialog_message("Coordinate Error", "Coordinates out of bounds."); return;
+        }
+        
+        term_dialog_input("Circle Radius", "Enter radius (e.g. 6):", input_buf, sizeof(input_buf));
+        if (sscanf(input_buf, "%d", &r) != 1 || r < 0) {
+            term_dialog_message("Input Error", "Radius must be non-negative."); return;
+        }
+        
+        int id = obj_create_circle(xc, yc, r, draw_char, active_layer_id, fill);
+        if (id > 0) {
+            selected_object_id = id;
+            file_trigger_autosave();
+            term_dialog_message("Success", "Circle registered successfully!");
+        }
+    }
+    else if (choice == 4) { /* Triangle */
+        int x1=0, y1=0, x2=0, y2=0, x3=0, y3=0;
+        
+        term_dialog_input("Vertex 1", "Enter coordinate x1 y1 (e.g. 40 2):", input_buf, sizeof(input_buf));
+        if (sscanf(input_buf, "%d %d", &x1, &y1) != 2) { term_dialog_message("Input Error", "Invalid syntax."); return; }
+        
+        term_dialog_input("Vertex 2", "Enter coordinate x2 y2 (e.g. 25 15):", input_buf, sizeof(input_buf));
+        if (sscanf(input_buf, "%d %d", &x2, &y2) != 2) { term_dialog_message("Input Error", "Invalid syntax."); return; }
+        
+        term_dialog_input("Vertex 3", "Enter coordinate x3 y3 (e.g. 55 15):", input_buf, sizeof(input_buf));
+        if (sscanf(input_buf, "%d %d", &x3, &y3) != 2) { term_dialog_message("Input Error", "Invalid syntax."); return; }
+        
+        int id = obj_create_triangle(x1, y1, x2, y2, x3, y3, draw_char, active_layer_id, fill);
+        if (id > 0) {
+            selected_object_id = id;
+            file_trigger_autosave();
+            term_dialog_message("Success", "Triangle registered successfully!");
+        }
+    }
+    else if (choice == 5) { /* Ellipse */
+        int xc = 0, yc = 0, rx = 0, ry = 0;
+        
+        term_dialog_input("Ellipse Center", "Enter center coordinate x y (e.g. 40 12):", input_buf, sizeof(input_buf));
+        if (sscanf(input_buf, "%d %d", &xc, &yc) != 2) { term_dialog_message("Input Error", "Invalid coordinates."); return; }
+        
+        term_dialog_input("Ellipse Axes", "Enter semi-major/minor radii rx ry (e.g. 15 6):", input_buf, sizeof(input_buf));
+        if (sscanf(input_buf, "%d %d", &rx, &ry) != 2 || rx < 0 || ry < 0) {
+            term_dialog_message("Input Error", "Axes must be positive."); return;
+        }
+        
+        int id = obj_create_ellipse(xc, yc, rx, ry, draw_char, active_layer_id, fill);
+        if (id > 0) {
+            selected_object_id = id;
+            file_trigger_autosave();
+            term_dialog_message("Success", "Ellipse registered successfully!");
+        }
+    }
+    else if (choice == 6) { /* Polygon */
+        char num_str[16];
+        int num_pts = 0;
+        term_dialog_input("Polygon Size", "Enter number of vertices (3-16):", num_str, sizeof(num_str));
+        if (!parse_int(num_str, &num_pts) || !validate_range(num_pts, 3, MAX_POLY_POINTS)) {
+            term_dialog_message("Input Error", "Vertices count must be between 3 and 16."); return;
+        }
+        
+        int xs[MAX_POLY_POINTS];
+        int ys[MAX_POLY_POINTS];
+        for (int i = 0; i < num_pts; i++) {
+            char title_str[32];
+            sprintf(title_str, "Vertex %d/%d", i + 1, num_pts);
+            term_dialog_input(title_str, "Enter vertex coordinates x y:", input_buf, sizeof(input_buf));
+            if (sscanf(input_buf, "%d %d", &xs[i], &ys[i]) != 2) {
+                term_dialog_message("Input Error", "Invalid vertex coordinate. Aborting polygon draw.");
+                return;
+            }
+        }
+        
+        int id = obj_create_polygon(xs, ys, num_pts, draw_char, active_layer_id, fill);
+        if (id > 0) {
+            selected_object_id = id;
+            file_trigger_autosave();
+            term_dialog_message("Success", "Polygon registered successfully!");
+        }
+    }
+}
+
+void menu_edit_shapes(void) {
+    if (object_count == 0) {
+        term_dialog_message("Editor Status", "Registry is empty. Draw shapes first!");
+        return;
+    }
+    
+    char obj_id_str[16];
+    draw_app_header("EDIT SHAPE METADATA");
+    
+    /* Print registry list */
+    printf("Registered Objects:\n");
+    for (int i = 0; i < object_count; i++) {
+        printf("  ID: %-3d  Name: %-15s  Layer: %d  Symbol: %c  Filled: %s\n",
+               object_registry[i].id, object_registry[i].name, 
+               object_registry[i].layer, object_registry[i].draw_char,
+               object_registry[i].is_filled ? "Yes" : "No");
+    }
+    printf("\n");
+    
+    int r = term_dialog_input("Edit Object", "Enter object ID to edit:", obj_id_str, sizeof(obj_id_str));
+    if (r <= 0) return;
+    
+    int target_id = 0;
+    if (!parse_int(obj_id_str, &target_id)) return;
+    
+    CanvasObject *obj = obj_find_by_id(target_id);
+    if (!obj) {
+        term_dialog_message("Search Status", "Object ID not found.");
+        return;
+    }
+    
+    if (obj->is_locked) {
+        term_dialog_message("Lock Warning", "Object is locked. Unlock it in display mode (L) before editing.");
+        return;
+    }
+    
+    draw_app_header("EDIT METADATA");
+    printf("Selected Object: %s (ID: %d)\n\n", obj->name, obj->id);
+    printf("Choose modification:\n");
+    printf("  1. Edit Drawing Character\n");
+    printf("  2. Toggle Filled/Hollow Status\n");
+    printf("  3. Move Object to Another Layer\n");
+    printf("  4. Rename Object\n");
+    printf("  5. Abort edits\n\n");
+    
+    char edit_opt_str[16];
+    r = term_dialog_input("Modify Attribute", "Select option (1-5):", edit_opt_str, sizeof(edit_opt_str));
+    if (r <= 0) return;
+    
+    int choice = 0;
+    if (!parse_int(edit_opt_str, &choice) || !validate_range(choice, 1, 5)) return;
+    if (choice == 5) return;
+    
+    obj_history_save();
+    
+    if (choice == 1) {
+        char ch_buf[16];
+        term_dialog_input("Change Symbol", "Enter new drawing character:", ch_buf, sizeof(ch_buf));
+        if (strlen(ch_buf) > 0) {
+            obj->draw_char = ch_buf[0];
+            file_trigger_autosave();
+            term_dialog_message("Status", "Symbol updated successfully.");
+        }
+    }
+    else if (choice == 2) {
+        obj->is_filled = !obj->is_filled;
+        file_trigger_autosave();
+        term_dialog_message("Status", "Filled toggle switched successfully.");
+    }
+    else if (choice == 3) {
+        char layer_buf[16];
+        printf("\nLayers Available:\n");
+        for (int i = 0; i < layer_count; i++) {
+            printf("  ID: %d  Name: %s\n", layers[i].id, layers[i].name);
+        }
+        term_dialog_input("Move Object", "Enter target layer ID:", layer_buf, sizeof(layer_buf));
+        int target_layer = 0;
+        if (parse_int(layer_buf, &target_layer)) {
+            layer_move_object(obj->id, target_layer);
+            file_trigger_autosave();
+            term_dialog_message("Status", "Object shifted layers successfully.");
+        }
+    }
+    else if (choice == 4) {
+        char name_buf[32];
+        term_dialog_input("Rename Object", "Enter new name:", name_buf, sizeof(name_buf));
+        if (strlen(name_buf) > 0) {
+            strncpy(obj->name, name_buf, sizeof(obj->name)-1);
+            obj->name[sizeof(obj->name)-1] = '\0';
+            file_trigger_autosave();
+            term_dialog_message("Status", "Name updated successfully.");
+        }
+    }
+}
+
+void menu_transform_shapes(void) {
+    if (object_count == 0) {
+        term_dialog_message("Editor Status", "Registry is empty.");
+        return;
+    }
+    
+    char id_str[16];
+    draw_app_header("TRANSFORM SHAPES");
+    
+    printf("Registered Objects:\n");
+    for (int i = 0; i < object_count; i++) {
+        printf("  ID: %-3d  Name: %-15s  Type: %d\n",
+               object_registry[i].id, object_registry[i].name, (int)object_registry[i].type);
+    }
+    printf("\n");
+    
+    int r = term_dialog_input("Select Object", "Enter object ID to transform:", id_str, sizeof(id_str));
+    if (r <= 0) return;
+    
+    int target_id = 0;
+    if (!parse_int(id_str, &target_id)) return;
+    
+    CanvasObject *obj = obj_find_by_id(target_id);
+    if (!obj) {
+        term_dialog_message("Search Status", "Object ID not found.");
+        return;
+    }
+    
+    if (obj->is_locked) {
+        term_dialog_message("Lock Warning", "Object is locked. Unlock it first.");
+        return;
+    }
+    
+    draw_app_header("APPLY TRANSFORM");
+    printf("Selected Object: %s (ID: %d)\n\n", obj->name, obj->id);
+    printf("Available Transformations:\n");
+    printf("  1. Translate/Move (dx, dy)\n");
+    printf("  2. Resize (dp1, dp2)\n");
+    printf("  3. Scale Size (factor)\n");
+    printf("  4. Rotate Triangle (triangle only)\n");
+    printf("  5. Mirror Shape Horizontally (Canvas center)\n");
+    printf("  6. Mirror Shape Vertically (Canvas center)\n");
+    printf("  7. Return to main menu\n\n");
+    
+    char trans_opt[16];
+    r = term_dialog_input("Select Transform", "Enter transform index (1-7):", trans_opt, sizeof(trans_opt));
+    if (r <= 0) return;
+    
+    int choice = 0;
+    if (!parse_int(trans_opt, &choice) || !validate_range(choice, 1, 7)) return;
+    if (choice == 7) return;
+    
+    obj_history_save();
+    
+    char params_buf[64];
+    if (choice == 1) {
+        int dx = 0, dy = 0;
+        term_dialog_input("Translate/Move", "Enter dx dy translation offset (e.g. 5 -2):", params_buf, sizeof(params_buf));
+        if (sscanf(params_buf, "%d %d", &dx, &dy) == 2) {
+            obj_translate(obj, dx, dy);
+            file_trigger_autosave();
+            term_dialog_message("Success", "Shape translated successfully!");
+        }
+    }
+    else if (choice == 2) {
+        int dp1 = 0, dp2 = 0;
+        term_dialog_input("Resize Parameters", "Enter parameter delta1 delta2 (e.g. 2 1):", params_buf, sizeof(params_buf));
+        if (sscanf(params_buf, "%d %d", &dp1, &dp2) == 2) {
+            obj_resize(obj, dp1, dp2);
+            file_trigger_autosave();
+            term_dialog_message("Success", "Shape resized successfully!");
+        }
+    }
+    else if (choice == 3) {
+        double factor = 1.0;
+        term_dialog_input("Scale Factor", "Enter float scale factor (e.g. 1.5 or 0.5):", params_buf, sizeof(params_buf));
+        if (sscanf(params_buf, "%lf", &factor) == 1 && factor > 0.0) {
+            obj_scale(obj, factor);
+            file_trigger_autosave();
+            term_dialog_message("Success", "Shape scaled successfully!");
+        } else {
+            term_dialog_message("Error", "Invalid scale factor.");
+        }
+    }
+    else if (choice == 4) {
+        if (obj->type != SHAPE_TRIANGLE) {
+            term_dialog_message("Operation Error", "Rotation only applies to Triangle shapes.");
+            return;
+        }
+        double deg = 0;
+        term_dialog_input("Rotate Triangle", "Enter rotation angle in degrees (e.g. 45.0):", params_buf, sizeof(params_buf));
+        if (sscanf(params_buf, "%lf", &deg) == 1) {
+            obj_rotate_triangle(obj, deg);
+            file_trigger_autosave();
+            term_dialog_message("Success", "Triangle rotated successfully!");
+        }
+    }
+    else if (choice == 5) {
+        obj_mirror_horizontal(obj);
+        file_trigger_autosave();
+        term_dialog_message("Success", "Horizontal flip applied!");
+    }
+    else if (choice == 6) {
+        obj_mirror_vertical(obj);
+        file_trigger_autosave();
+        term_dialog_message("Success", "Vertical flip applied!");
+    }
+}
+
+void menu_layer_management(void) {
+    char ch_buf[16];
+    while (1) {
+        draw_app_header("LAYER MANAGEMENT");
+        printf("Current Active Layer ID: %d (%s)\n\n", active_layer_id, layers[layer_find_index(active_layer_id)].name);
+        
+        printf("Layer Registry:\n");
+        printf("  %-8s  %-20s  %-10s  %-12s\n", "Layer ID", "Layer Name", "Visible", "Render Order");
+        printf("  -------------------------------------------------------------\n");
+        for (int i = 0; i < layer_count; i++) {
+            printf("  %-8d  %-20s  %-10s  %-12d\n",
+                   layers[i].id, layers[i].name, 
+                   layers[i].is_visible ? "Yes" : "No",
+                   layers[i].render_order);
+        }
+        printf("\n");
+        
+        printf("Operations:\n");
+        printf("  1. Add Layer\n");
+        printf("  2. Delete Layer\n");
+        printf("  3. Set Active Layer\n");
+        printf("  4. Toggle Visibility\n");
+        printf("  5. Modify Render Order\n");
+        printf("  6. Return to main menu\n\n");
+        
+        int r = term_dialog_input("Layer Operations", "Select option (1-6):", ch_buf, sizeof(ch_buf));
+        if (r <= 0) break;
+        
+        int choice = 0;
+        if (!parse_int(ch_buf, &choice) || !validate_range(choice, 1, 6)) continue;
+        if (choice == 6) break;
+        
+        if (choice == 1) {
+            char name_buf[32];
+            term_dialog_input("Create Layer", "Enter name of new layer:", name_buf, sizeof(name_buf));
+            int new_id = layer_create(name_buf);
+            if (new_id >= 0) {
+                active_layer_id = new_id;
+                file_trigger_autosave();
+                term_dialog_message("Success", "New layer added and set as active.");
+            } else {
+                term_dialog_message("Error", "Layer limit reached (Max 10).");
+            }
+        }
+        else if (choice == 2) {
+            char id_buf[16];
+            term_dialog_input("Delete Layer", "Enter layer ID to delete:", id_buf, sizeof(id_buf));
+            int del_id = 0;
+            if (parse_int(id_buf, &del_id)) {
+                if (layer_delete(del_id)) {
+                    file_trigger_autosave();
+                    term_dialog_message("Success", "Layer deleted. Objects shifted to Layer 0.");
+                } else {
+                    term_dialog_message("Error", "Cannot delete Layer 0 or layer not found.");
+                }
+            }
+        }
+        else if (choice == 3) {
+            char id_buf[16];
+            term_dialog_input("Set Active Layer", "Enter layer ID to make active:", id_buf, sizeof(id_buf));
+            int act_id = 0;
+            if (parse_int(id_buf, &act_id)) {
+                if (layer_find_index(act_id) >= 0) {
+                    active_layer_id = act_id;
+                } else {
+                    term_dialog_message("Error", "Layer ID not found.");
+                }
+            }
+        }
+        else if (choice == 4) {
+            char id_buf[16];
+            term_dialog_input("Toggle Visibility", "Enter layer ID to show/hide:", id_buf, sizeof(id_buf));
+            int vis_id = 0;
+            if (parse_int(id_buf, &vis_id)) {
+                int idx = layer_find_index(vis_id);
+                if (idx >= 0) {
+                    layer_set_visibility(vis_id, !layers[idx].is_visible);
+                    file_trigger_autosave();
+                } else {
+                    term_dialog_message("Error", "Layer ID not found.");
+                }
+            }
+        }
+        else if (choice == 5) {
+            char id_buf[16];
+            term_dialog_input("Modify Order", "Enter layer ID:", id_buf, sizeof(id_buf));
+            int ord_id = 0;
+            if (parse_int(id_buf, &ord_id)) {
+                char order_buf[16];
+                term_dialog_input("Modify Order", "Enter render order index (lower values render first):", order_buf, sizeof(order_buf));
+                int order_val = 0;
+                if (parse_int(order_buf, &order_val)) {
+                    layer_set_render_order(ord_id, order_val);
+                    file_trigger_autosave();
+                }
+            }
+        }
+    }
+}
+
+void menu_file_operations(void) {
+    char file_choice[16];
+    char path_buf[128];
+    
+    draw_app_header("FILE MANAGEMENT");
+    printf("Choose action:\n");
+    printf("  1. Save Project (.aststudio file)\n");
+    printf("  2. Load Project (.aststudio file)\n");
+    printf("  3. Export Composited Canvas to Text file (.txt)\n");
+    printf("  4. Trigger Manual Auto-Backup\n");
+    printf("  5. Return to main menu\n\n");
+    
+    int r = term_dialog_input("File Menu", "Select choice (1-5):", file_choice, sizeof(file_choice));
+    if (r <= 0) return;
+    
+    int choice = 0;
+    if (!parse_int(file_choice, &choice) || !validate_range(choice, 1, 5)) return;
+    if (choice == 5) return;
+    
+    if (choice == 1) {
+        term_dialog_input("Save File Path", "Enter filename (e.g. data/project.aststudio):", path_buf, sizeof(path_buf));
+        if (strlen(path_buf) == 0) strcpy(path_buf, "data/project.aststudio");
+        
+        term_loading_animation("Saving Project");
+        if (file_save_project(path_buf)) {
+            term_dialog_message("Success", "Project saved successfully!");
+        } else {
+            term_dialog_message("Error", "Could not open path for writing.");
+        }
+    }
+    else if (choice == 2) {
+        term_dialog_input("Load File Path", "Enter filename (e.g. data/project.aststudio):", path_buf, sizeof(path_buf));
+        if (strlen(path_buf) == 0) strcpy(path_buf, "data/project.aststudio");
+        
+        term_loading_animation("Loading Project");
+        if (file_load_project(path_buf)) {
+            compositor_render();
+            term_dialog_message("Success", "Project loaded successfully! Registry restored.");
+        } else {
+            term_dialog_message("Error", "Could not open or parse project file.");
+        }
+    }
+    else if (choice == 3) {
+        term_dialog_input("Export File Path", "Enter filename (e.g. project_canvas.txt):", path_buf, sizeof(path_buf));
+        if (strlen(path_buf) == 0) strcpy(path_buf, "project_canvas.txt");
+        
+        term_loading_animation("Exporting Canvas");
+        if (file_export_canvas_txt(path_buf)) {
+            term_dialog_message("Success", "Composited canvas printed to text file!");
+        } else {
+            term_dialog_message("Error", "Could not write canvas file.");
+        }
+    }
+    else if (choice == 4) {
+        term_loading_animation("Generating Timestamped Backup");
+        file_trigger_autobackup();
+        term_dialog_message("Success", "Auto-backup file created under data/ directory.");
+    }
+}
+
+void menu_analytics(void) {
+    AnalyticsDashboard dash;
+    /* Refresh rendering to count canvas utilization correctly */
+    compositor_render();
+    analytics_get_dashboard(&dash);
+    
+    draw_app_header("ANALYTICS & DIAGNOSTICS DASHBOARD");
+    
+    printf("  ┌──────────────────────────────────────────────────────────┐\n");
+    printf("  │  Metric                                │ Value           │\n");
+    printf("  ├────────────────────────────────────────┼─────────────────┤\n");
+    printf("  │  Total Objects Registered              │ %-15d │\n", dash.total_objects);
+    printf("  │  Total Active Layers                   │ %-15d │\n", dash.total_layers);
+    printf("  │  Canvas Utilization Percentage         │ %-14.2f%% │\n", dash.canvas_utilization);
+    printf("  │  Most Frequently Used Shape            │ %-15s │\n", dash.most_used_shape);
+    printf("  │  Drawing Complexity Score              │ %-15d │\n", dash.complexity_score);
+    printf("  │  Estimated Active RAM Usage            │ %-10zu Bytes │\n", dash.memory_bytes);
+    printf("  └────────────────────────────────────────┴─────────────────┘\n\n");
+    
+    term_dialog_message("Diagnostics Dashboard", "Press [ENTER] to exit dashboard view.");
+}
+
+void menu_search(void) {
+    char choice_str[16];
+    draw_app_header("SEARCH OBJECT REGISTRY");
+    
+    printf("Search Queries:\n");
+    printf("  1. Search by Object ID\n");
+    printf("  2. Search by Shape Type\n");
+    printf("  3. Search by Layer ID\n");
+    printf("  4. Search by Coordinate/Position overlap\n");
+    printf("  5. Return to main menu\n\n");
+    
+    int r = term_dialog_input("Search Engine", "Select option (1-5):", choice_str, sizeof(choice_str));
+    if (r <= 0) return;
+    
+    int choice = 0;
+    if (!parse_int(choice_str, &choice) || !validate_range(choice, 1, 5)) return;
+    if (choice == 5) return;
+    
+    char query_buf[64];
+    
+    if (choice == 1) {
+        term_dialog_input("Search ID", "Enter Object ID:", query_buf, sizeof(query_buf));
+        int q_id = 0;
+        if (parse_int(query_buf, &q_id)) {
+            CanvasObject *o = obj_find_by_id(q_id);
+            if (o) {
+                draw_app_header("SEARCH RESULTS");
+                printf("  Found Match:\n");
+                printf("  ID: %d | Name: %s | Type: %d | Layer: %d | Locked: %s | Visibility: %s\n",
+                       o->id, o->name, (int)o->type, o->layer, 
+                       o->is_locked ? "Yes" : "No", o->is_visible ? "Visible" : "Hidden");
+                term_dialog_message("Search Result", "Match found!");
+            } else {
+                term_dialog_message("Search Status", "No match found for that ID.");
+            }
+        }
+    }
+    else if (choice == 2) {
+        printf("\nShape Types:\n");
+        printf("  0: Line | 1: Rectangle | 2: Circle | 3: Triangle | 4: Ellipse | 5: Polygon\n");
+        term_dialog_input("Search Type", "Enter shape index (0-5):", query_buf, sizeof(query_buf));
+        int type_val = -1;
+        if (parse_int(query_buf, &type_val) && validate_range(type_val, 0, 5)) {
+            draw_app_header("SEARCH RESULTS");
+            int found_count = 0;
+            for (int i = 0; i < object_count; i++) {
+                if ((int)object_registry[i].type == type_val) {
+                    printf("  ID: %-3d  Name: %-15s  Layer: %d  Symbol: %c\n",
+                           object_registry[i].id, object_registry[i].name, 
+                           object_registry[i].layer, object_registry[i].draw_char);
+                    found_count++;
+                }
+            }
+            char res_str[64];
+            sprintf(res_str, "Search completed. Found %d match(es).", found_count);
+            term_dialog_message("Search Status", res_str);
+        }
+    }
+    else if (choice == 3) {
+        term_dialog_input("Search Layer", "Enter Layer ID:", query_buf, sizeof(query_buf));
+        int layer_val = -1;
+        if (parse_int(query_buf, &layer_val)) {
+            draw_app_header("SEARCH RESULTS");
+            int found_count = 0;
+            for (int i = 0; i < object_count; i++) {
+                if (object_registry[i].layer == layer_val) {
+                    printf("  ID: %-3d  Name: %-15s  Type: %d  Symbol: %c\n",
+                           object_registry[i].id, object_registry[i].name, 
+                           (int)object_registry[i].type, object_registry[i].draw_char);
+                    found_count++;
+                }
+            }
+            char res_str[64];
+            sprintf(res_str, "Search completed. Found %d match(es).", found_count);
+            term_dialog_message("Search Status", res_str);
+        }
+    }
+    else if (choice == 4) {
+        int qx = 0, qy = 0;
+        term_dialog_input("Search Position", "Enter coordinate coordinate x y (e.g. 15 10):", query_buf, sizeof(query_buf));
+        if (sscanf(query_buf, "%d %d", &qx, &qy) == 2) {
+            draw_app_header("SEARCH RESULTS");
+            
+            /* Render a test composited canvas buffer specifically to find overlaps */
+            compositor_render();
+            
+            /* Actually, we can check if object bounds overlap, or just check the rendered pixels.
+               Check bounding box coordinates of each object for overlapping position:
+               A direct check is easier: */
+            int found_count = 0;
+            for (int i = 0; i < object_count; i++) {
+                CanvasObject *o = &object_registry[i];
+                int overlap = 0;
+                
+                switch (o->type) {
+                    case SHAPE_LINE: {
+                        /* Check endpoints roughly */
+                        int xmin = o->params.line.p1.x < o->params.line.p2.x ? o->params.line.p1.x : o->params.line.p2.x;
+                        int xmax = o->params.line.p1.x > o->params.line.p2.x ? o->params.line.p1.x : o->params.line.p2.x;
+                        int ymin = o->params.line.p1.y < o->params.line.p2.y ? o->params.line.p1.y : o->params.line.p2.y;
+                        int ymax = o->params.line.p1.y > o->params.line.p2.y ? o->params.line.p1.y : o->params.line.p2.y;
+                        if (qx >= xmin && qx <= xmax && qy >= ymin && qy <= ymax) overlap = 1;
+                        break;
+                    }
+                    case SHAPE_RECTANGLE: {
+                        int rx = o->params.rect.top_left.x;
+                        int ry = o->params.rect.top_left.y;
+                        int rw = o->params.rect.width;
+                        int rh = o->params.rect.height;
+                        if (qx >= rx && qx < rx + rw && qy >= ry && qy < ry + rh) overlap = 1;
+                        break;
+                    }
+                    case SHAPE_CIRCLE: {
+                        int dx = qx - o->params.circle.center.x;
+                        int dy = qy - o->params.circle.center.y;
+                        if (dx*dx + dy*dy <= o->params.circle.radius * o->params.circle.radius) overlap = 1;
+                        break;
+                    }
+                    case SHAPE_TRIANGLE: {
+                        /* Bounding box overlap rough estimation */
+                        int xs[3] = {o->params.triangle.v1.x, o->params.triangle.v2.x, o->params.triangle.v3.x};
+                        int ys[3] = {o->params.triangle.v1.y, o->params.triangle.v2.y, o->params.triangle.v3.y};
+                        int xmin = xs[0], xmax = xs[0], ymin = ys[0], ymax = ys[0];
+                        for (int k = 1; k < 3; k++) {
+                            if (xs[k] < xmin) xmin = xs[k];
+                            if (xs[k] > xmax) xmax = xs[k];
+                            if (ys[k] < ymin) ymin = ys[k];
+                            if (ys[k] > ymax) ymax = ys[k];
+                        }
+                        if (qx >= xmin && qx <= xmax && qy >= ymin && qy <= ymax) overlap = 1;
+                        break;
+                    }
+                    case SHAPE_ELLIPSE: {
+                        double dx = qx - o->params.ellipse.center.x;
+                        double dy = qy - o->params.ellipse.center.y;
+                        double rx = o->params.ellipse.rx;
+                        double ry = o->params.ellipse.ry;
+                        if (rx > 0 && ry > 0) {
+                            if ((dx*dx)/(rx*rx) + (dy*dy)/(ry*ry) <= 1.05) overlap = 1;
+                        }
+                        break;
+                    }
+                    case SHAPE_POLYGON: {
+                        int xmin = o->params.polygon.vertices[0].x;
+                        int xmax = xmin;
+                        int ymin = o->params.polygon.vertices[0].y;
+                        int ymax = ymin;
+                        for (int k = 1; k < o->params.polygon.num_vertices; k++) {
+                            int px = o->params.polygon.vertices[k].x;
+                            int py = o->params.polygon.vertices[k].y;
+                            if (px < xmin) xmin = px;
+                            if (px > xmax) xmax = px;
+                            if (py < ymin) ymin = py;
+                            if (py > ymax) ymax = py;
+                        }
+                        if (qx >= xmin && qx <= xmax && qy >= ymin && qy <= ymax) overlap = 1;
+                        break;
+                    }
+                }
+                
+                if (overlap) {
+                    printf("  ID: %-3d  Name: %-15s  Type: %d  Layer: %d  Symbol: %c\n",
+                           o->id, o->name, (int)o->type, o->layer, o->draw_char);
+                    found_count++;
+                }
+            }
+            
+            char res_str[64];
+            sprintf(res_str, "Overlap search completed. Found %d object(s).", found_count);
+            term_dialog_message("Search Status", res_str);
+        }
+    }
+}
+
+void menu_display_canvas_interactive(void) {
+    /* Main interactive canvas viewer loop */
+    int running = 1;
+    
+    /* Auto composition render */
+    compositor_render();
+    
+    /* Pick default selection if registry is not empty and none is selected */
+    if (selected_object_id == -1 && object_count > 0) {
+        selected_object_id = object_registry[0].id;
+    }
+    
+    while (running) {
+        term_clear();
+        
+        /* Render coordinate ruler columns (X: 0 to 79) on line 0 and 1 */
+        term_set_color(TERM_COLOR_YELLOW, TERM_COLOR_BLACK);
+        term_move_cursor(0, 4);
+        /* Rulers */
+        for (int x = 0; x < CANVAS_WIDTH; x += 10) {
+            printf("%-10d", x);
+        }
+        term_move_cursor(1, 4);
+        for (int x = 0; x < CANVAS_WIDTH; x++) {
+            if (x % 10 == 0) printf("|");
+            else if (x % 5 == 0) printf("+");
+            else printf(".");
+        }
+        
+        /* Render canvas rows with Y ruler (left-aligned column) */
+        for (int y = 0; y < CANVAS_HEIGHT; y++) {
+            term_move_cursor(y + 2, 0);
+            term_set_color(TERM_COLOR_YELLOW, TERM_COLOR_BLACK);
+            printf("%2d |", y);
+            
+            term_set_color(TERM_COLOR_WHITE, TERM_COLOR_BLACK);
+            for (int x = 0; x < CANVAS_WIDTH; x++) {
+                char ch = canvas[y][x];
+                
+                /* Grid View ON overlay */
+                if (grid_view_enabled && ch == '_') {
+                    if (x % 10 == 0 || y % 5 == 0) {
+                        term_set_color(TERM_COLOR_BLUE, TERM_COLOR_BLACK);
+                        printf(".");
+                        term_set_color(TERM_COLOR_WHITE, TERM_COLOR_BLACK);
+                        continue;
+                    }
+                }
+                
+                /* Highlight selected object's bounding vertices / drawing characters in RED or GREEN */
+                /* For visual representation, we draw the character as is, but we can colorize it if selected! */
+                int is_sel_pixel = 0;
+                CanvasObject *sel_obj = obj_find_by_id(selected_object_id);
+                if (sel_obj && sel_obj->is_visible) {
+                    /* Check if cell was modified by selection compositor */
+                    /* To draw a blinking highlight, we can colorize cells that belong to selection */
+                    /* An elegant way is checking cell occupancy in compositor. For this project, colorizing the matching
+                       drawing character is extremely simple and looks beautiful. */
+                    if (ch == sel_obj->draw_char) {
+                        /* Confirm coordinate overlap */
+                        int overlap = 0;
+                        switch (sel_obj->type) {
+                            case SHAPE_LINE: {
+                                int xmin = sel_obj->params.line.p1.x < sel_obj->params.line.p2.x ? sel_obj->params.line.p1.x : sel_obj->params.line.p2.x;
+                                int xmax = sel_obj->params.line.p1.x > sel_obj->params.line.p2.x ? sel_obj->params.line.p1.x : sel_obj->params.line.p2.x;
+                                int ymin = sel_obj->params.line.p1.y < sel_obj->params.line.p2.y ? sel_obj->params.line.p1.y : sel_obj->params.line.p2.y;
+                                int ymax = sel_obj->params.line.p1.y > sel_obj->params.line.p2.y ? sel_obj->params.line.p1.y : sel_obj->params.line.p2.y;
+                                if (x >= xmin && x <= xmax && y >= ymin && y <= ymax) overlap = 1;
+                                break;
+                            }
+                            case SHAPE_RECTANGLE: {
+                                int rx = sel_obj->params.rect.top_left.x;
+                                int ry = sel_obj->params.rect.top_left.y;
+                                int rw = sel_obj->params.rect.width;
+                                int rh = sel_obj->params.rect.height;
+                                if (x >= rx && x < rx + rw && y >= ry && y < ry + rh) overlap = 1;
+                                break;
+                            }
+                            case SHAPE_CIRCLE: {
+                                int dx = x - sel_obj->params.circle.center.x;
+                                int dy = y - sel_obj->params.circle.center.y;
+                                if (dx*dx + dy*dy <= sel_obj->params.circle.radius * sel_obj->params.circle.radius) overlap = 1;
+                                break;
+                            }
+                            case SHAPE_TRIANGLE: {
+                                int xs[3] = {sel_obj->params.triangle.v1.x, sel_obj->params.triangle.v2.x, sel_obj->params.triangle.v3.x};
+                                int ys[3] = {sel_obj->params.triangle.v1.y, sel_obj->params.triangle.v2.y, sel_obj->params.triangle.v3.y};
+                                int xmin = xs[0], xmax = xs[0], ymin = ys[0], ymax = ys[0];
+                                for (int k = 1; k < 3; k++) {
+                                    if (xs[k] < xmin) xmin = xs[k];
+                                    if (xs[k] > xmax) xmax = xs[k];
+                                    if (ys[k] < ymin) ymin = ys[k];
+                                    if (ys[k] > ymax) ymax = ys[k];
+                                }
+                                if (x >= xmin && x <= xmax && y >= ymin && y <= ymax) overlap = 1;
+                                break;
+                            }
+                            case SHAPE_ELLIPSE: {
+                                double dx = x - sel_obj->params.ellipse.center.x;
+                                double dy = y - sel_obj->params.ellipse.center.y;
+                                double rx = sel_obj->params.ellipse.rx;
+                                double ry = sel_obj->params.ellipse.ry;
+                                if (rx > 0 && ry > 0 && (dx*dx)/(rx*rx) + (dy*dy)/(ry*ry) <= 1.05) overlap = 1;
+                                break;
+                            }
+                            case SHAPE_POLYGON: {
+                                int xmin = sel_obj->params.polygon.vertices[0].x;
+                                int xmax = xmin, ymin = sel_obj->params.polygon.vertices[0].y, ymax = ymin;
+                                for (int k = 1; k < sel_obj->params.polygon.num_vertices; k++) {
+                                    int px = sel_obj->params.polygon.vertices[k].x;
+                                    int py = sel_obj->params.polygon.vertices[k].y;
+                                    if (px < xmin) xmin = px;
+                                    if (px > xmax) xmax = px;
+                                    if (py < ymin) ymin = py;
+                                    if (py > ymax) ymax = py;
+                                }
+                                if (x >= xmin && x <= xmax && y >= ymin && y <= ymax) overlap = 1;
+                                break;
+                            }
+                        }
+                        
+                        if (overlap) is_sel_pixel = 1;
+                    }
+                }
+                
+                if (is_sel_pixel) {
+                    term_set_color(TERM_COLOR_GREEN, TERM_COLOR_BLACK);
+                    printf("%c", ch);
+                    term_set_color(TERM_COLOR_WHITE, TERM_COLOR_BLACK);
+                } else {
+                    printf("%c", ch);
+                }
+            }
+            printf(" |");
+        }
+        
+        /* Bottom border line */
+        term_move_cursor(CANVAS_HEIGHT + 2, 0);
+        term_set_color(TERM_COLOR_YELLOW, TERM_COLOR_BLACK);
+        printf("   ┌");
+        for (int x = 0; x < CANVAS_WIDTH; x++) printf("─");
+        printf("┐\n");
+        
+        /* Render status information */
+        CanvasObject *sel = obj_find_by_id(selected_object_id);
+        char left_status[128] = "";
+        char right_status[128] = "";
+        
+        sprintf(left_status, "Layer: %d | Total Objects: %d", active_layer_id, object_count);
+        if (sel) {
+            sprintf(right_status, "SELECTED: %s [ID %d] at (%d,%d) %s", 
+                    sel->name, sel->id, 
+                    (sel->type == SHAPE_LINE) ? sel->params.line.p1.x :
+                    (sel->type == SHAPE_RECTANGLE) ? sel->params.rect.top_left.x :
+                    (sel->type == SHAPE_CIRCLE) ? sel->params.circle.center.x :
+                    (sel->type == SHAPE_TRIANGLE) ? sel->params.triangle.v1.x :
+                    (sel->type == SHAPE_ELLIPSE) ? sel->params.ellipse.center.x :
+                    sel->params.polygon.vertices[0].x,
+                    
+                    (sel->type == SHAPE_LINE) ? sel->params.line.p1.y :
+                    (sel->type == SHAPE_RECTANGLE) ? sel->params.rect.top_left.y :
+                    (sel->type == SHAPE_CIRCLE) ? sel->params.circle.center.y :
+                    (sel->type == SHAPE_TRIANGLE) ? sel->params.triangle.v1.y :
+                    (sel->type == SHAPE_ELLIPSE) ? sel->params.ellipse.center.y :
+                    sel->params.polygon.vertices[0].y,
+                    
+                    sel->is_locked ? "[LOCKED]" : "");
+        } else {
+            strcpy(right_status, "NO SELECTION");
+        }
+        
+        term_draw_status_bar(left_status, right_status);
+        
+        /* Display keyboard helper commands */
+        term_move_cursor(CANVAS_HEIGHT + 4, 2);
+        term_set_color(TERM_COLOR_CYAN, TERM_COLOR_BLACK);
+        printf("HOTKEYS: [W/A/S/D] Move | [+/-] Scale | [L] Lock/Unlock | [H] Hide/Show | [Tab] Cycle Sel");
+        term_move_cursor(CANVAS_HEIGHT + 5, 2);
+        printf("         [C] Copy | [V] Paste | [D] Duplicate | [X/Del] Delete | [G] Grid | [U/R] Undo/Redo");
+        term_move_cursor(CANVAS_HEIGHT + 6, 2);
+        printf("         [S] FastSave | [E] ExportTXT | [M] Back to Main Menu");
+        term_flush();
+        
+        /* Key processing */
+        int k = term_get_key();
+        if (k == 0) {
+            term_sleep(30);
+            continue;
+        }
+        
+        if (k == 'm' || k == 'M' || k == KEY_ESC) {
+            running = 0;
+            break;
+        }
+        
+        if (k == KEY_TAB) {
+            if (object_count > 0) {
+                /* Find index of current selected */
+                int curr_idx = -1;
+                for (int i = 0; i < object_count; i++) {
+                    if (object_registry[i].id == selected_object_id) {
+                        curr_idx = i;
+                        break;
+                    }
+                }
+                curr_idx = (curr_idx + 1) % object_count;
+                selected_object_id = object_registry[curr_idx].id;
+            }
+        }
+        else if (k == 'g' || k == 'G') {
+            grid_view_enabled = !grid_view_enabled;
+        }
+        else if (k == 'u' || k == 'U') {
+            if (obj_history_undo()) {
+                compositor_render();
+                term_dialog_message("History", "Undo operation applied.");
+            }
+        }
+        else if (k == 'r' || k == 'R') {
+            if (obj_history_redo()) {
+                compositor_render();
+                term_dialog_message("History", "Redo operation applied.");
+            }
+        }
+        else if (k == 'l' || k == 'L') {
+            if (sel) {
+                sel->is_locked = !sel->is_locked;
+                file_trigger_autosave();
+            }
+        }
+        else if (k == 'h' || k == 'H') {
+            if (sel) {
+                sel->is_visible = !sel->is_visible;
+                file_trigger_autosave();
+                compositor_render();
+            }
+        }
+        else if (k == 'c' || k == 'C') {
+            if (sel) {
+                obj_copy(sel->id);
+                term_dialog_message("Clipboard", "Object copied to clipboard.");
+            }
+        }
+        else if (k == 'v' || k == 'V') {
+            int new_id = obj_paste(active_layer_id);
+            if (new_id > 0) {
+                compositor_render();
+                file_trigger_autosave();
+            } else {
+                term_dialog_message("Clipboard Error", "Clipboard is empty or registry full.");
+            }
+        }
+        else if (k == 'd' || k == 'D') {
+            if (sel) {
+                int new_id = obj_duplicate(sel->id);
+                if (new_id > 0) {
+                    compositor_render();
+                    file_trigger_autosave();
+                }
+            }
+        }
+        else if (k == KEY_DELETE_KEY || k == 'x' || k == 'X') {
+            if (sel) {
+                if (term_dialog_confirm("Delete Object", "Delete selected object?")) {
+                    obj_delete(sel->id);
+                    compositor_render();
+                    file_trigger_autosave();
+                    
+                    /* Pick next valid selection */
+                    if (object_count > 0) {
+                        selected_object_id = object_registry[0].id;
+                    } else {
+                        selected_object_id = -1;
+                    }
+                }
+            }
+        }
+        else if (k == 's' || k == 'S') {
+            file_trigger_autosave();
+            term_dialog_message("Autosave", "Project saved successfully to data/autosave.aststudio");
+        }
+        else if (k == 'e' || k == 'E') {
+            file_export_canvas_txt("canvas_export.txt");
+            term_dialog_message("Export Canvas", "Exported to canvas_export.txt in root directory.");
+        }
+        /* Translation handles */
+        else if (k == 'w' || k == 'W' || k == KEY_UP_ARROW) {
+            if (sel) {
+                obj_translate(sel, 0, -1);
+                compositor_render();
+                file_trigger_autosave();
+            }
+        }
+        else if (k == 's' || k == 'S' || k == KEY_DOWN_ARROW) {
+            if (sel) {
+                obj_translate(sel, 0, 1);
+                compositor_render();
+                file_trigger_autosave();
+            }
+        }
+        else if (k == 'a' || k == 'A' || k == KEY_LEFT_ARROW) {
+            if (sel) {
+                obj_translate(sel, -1, 0);
+                compositor_render();
+                file_trigger_autosave();
+            }
+        }
+        else if (k == 'd' || k == 'D' || k == KEY_RIGHT_ARROW) {
+            if (sel) {
+                obj_translate(sel, 1, 0);
+                compositor_render();
+                file_trigger_autosave();
+            }
+        }
+        /* Scaling handles */
+        else if (k == '+') {
+            if (sel) {
+                obj_scale(sel, 1.1);
+                compositor_render();
+                file_trigger_autosave();
+            }
+        }
+        else if (k == '-') {
+            if (sel) {
+                obj_scale(sel, 0.9);
+                compositor_render();
+                file_trigger_autosave();
+            }
+        }
+        /* Resizing handles */
+        else if (k == '[') {
+            if (sel) {
+                obj_resize(sel, -1, -1);
+                compositor_render();
+                file_trigger_autosave();
+            }
+        }
+        else if (k == ']') {
+            if (sel) {
+                obj_resize(sel, 1, 1);
+                compositor_render();
+                file_trigger_autosave();
+            }
+        }
+    }
+}
+
+void menu_help(void) {
+    draw_app_header("USER GUIDE & HELP PORTAL");
+    printf("ASCII Graphics Studio Pro is a vector-like 2D text editor.\n\n");
+    printf("SYSTEM OVERVIEW:\n");
+    printf("  - Drawing Grid: Resolution is 80x25. Coordinate system begins at (0,0) top-left.\n");
+    printf("  - Objects Registry: Objects are vector structures which are composited in real-time.\n");
+    printf("  - Layer compositor: Multiple layers are drawn starting from lower index IDs to higher.\n");
+    printf("  - Undo system: Up to 30 past modifications can be undone.\n\n");
+    
+    printf("DISPLAY CANVAS MODE KEYBOARD INTERACTION:\n");
+    printf("  Arrow Keys / WASD : Translate selected object coordinates\n");
+    printf("  Tab               : Cycle selection highlights through registered shapes\n");
+    printf("  + / -             : Scale active object sizes up or down\n");
+    printf("  [ / ]             : Resize width/height ratios\n");
+    printf("  L                 : Toggle Lock status (locks position & edit variables)\n");
+    printf("  H                 : Toggle Visibility of selected geometry\n");
+    printf("  C / V / D         : Clipboard copy, paste on active layer, and duplication\n");
+    printf("  X / Delete        : Remove shape registry record\n");
+    printf("  U / R             : Undo or Redo changes\n");
+    printf("  G                 : Toggle coordinate griddots overlay visibility\n");
+    printf("  S                 : Save project database snapshot\n");
+    printf("  E                 : Print current backbuffer composite canvas to text file\n");
+    printf("  ESC / M           : Close canvas view and return to main screen\n\n");
+    
+    term_dialog_message("Help Guide", "Press [ENTER] to return to main menu.");
+}
