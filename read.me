@@ -1,0 +1,161 @@
+# ASCII Graphics Studio Pro (v1.0.0)
+
+ASCII Graphics Studio Pro is a professional-grade, interactive 2D Vector-to-Raster Graphics Editor running entirely inside the command line terminal. It features a modern, windowed UI with real-time vector compositing on a raster character canvas grid. Designed with a modular software architecture in C, the system compiles natively using standard ANSI VT (Virtual Terminal) escapes, or links with `ncurses`/`PDCurses` libraries.
+
+---
+
+## 1. Problem Statement & Mission
+
+Traditional C command-line console graphics assignments are often limited to simple loop outputs or hardcoded print loops. The goal of this project is to implement a professional-grade vector CAD tool inside the limitations of a standard terminal. 
+
+**ASCII Graphics Studio Pro** solves this by:
+1. Maintaining a persistent vector object database (registry) rather than rendering destructively directly to pixels.
+2. Rendering objects dynamically onto a composited raster buffer (2D character array) using layer compositing.
+3. Enabling real-time, interactive manipulation (translation, scale, resize, mirror, lock, visibility, layering) of shapes via keyboard hotkeys.
+4. Providing dual compile compatibility: full library-free ANSI graphics engine fallback for Windows Command Prompts, alongside ncurses capabilities.
+
+---
+
+## 2. System Architecture
+
+Below is the ASCII data flow diagram of the ASCII Graphics Studio Pro rendering pipe:
+
+```
+                  ┌────────────────────────────────────────┐
+                  │           User Key Press / Input       │
+                  └───────────────────┬────────────────────┘
+                                      │
+                                      ▼
+                  ┌────────────────────────────────────────┐
+                  │       UI Router & Hotkey Manager       │
+                  └───────────────────┬────────────────────┘
+                                      │
+                                      ▼
+                  ┌────────────────────────────────────────┐
+                  │       Vector Database (Registry)       │
+                  │  - Objects 1..N (Params, Layer, etc)   │
+                  │  - Layer visibility states & order     │
+                  └───────────────────┬────────────────────┘
+                                      │
+                         Compositor   │   (Render Order sort)
+                         Loops Layers │
+                                      ▼
+                  ┌────────────────────────────────────────┐
+                  │        Raster Compositor Buffer        │
+                  │      - 2D Character Canvas [25][80]     │
+                  └───────────────────┬────────────────────┘
+                                      │
+                                      ├──────────────┐
+                                      ▼              ▼
+                        ┌──────────────────┐   ┌───────────────┐
+                        │ Terminal Screen  │   │  Text Exporter│
+                        │ (ANSI VT/ncurses)│   │  (.txt File)  │
+                        └──────────────────┘   └───────────────┘
+```
+
+---
+
+## 3. Advanced Algorithms Used
+
+* **Bresenham's Line Algorithm**: Computes line coordinates using integer addition and bit-shifting instead of expensive floating-point slope divisions, resolving roundoff errors.
+* **Midpoint Circle Algorithm**: Utilizes a circular decision parameter to plot points along 8 symmetric octants simultaneously.
+* **Midpoint Ellipse Algorithm**: Plots points in two regions based on slope changes, calculating decision parameters using long-integer logic.
+* **Scanline Polygon Fill**: Tracks vertices, extracts edge lists, computes intersections with horizontal scanlines, sorts intersections along the X-axis, and fills alternating spans.
+* **Centered Mirroring**: Flips object vectors mathematically across the screen center axes ($X = 40$, $Y = 12$) or shape centroids.
+* **Coordinate Matrix Rotation**: Computes vertex rotation around centroids for triangles using trigonometry.
+
+---
+
+## 4. Key Data Structures
+
+* **Union Parameters**: Encapsulates variant geometry properties inside a compact, shape-specific memory structure (`ShapeParams`).
+* **Nested Structures**: Groups nested components like vertices, dimensions, coordinates, and layer attributes.
+* **Registry Database**: Stores objects sequentially.
+* **History State Registry**: Clones the database and active settings into circular arrays, enabling multi-step Undo/Redo cycles.
+
+---
+
+## 5. Compilation & Build Configurations
+
+### Dual Engine Configurations
+- **Standard ANSI Mode (Default)**: Compiles with no external library dependencies. Works natively on Windows 10/11 Command Prompt and Linux bash using virtual terminals.
+- **Ncurses Mode**: Define the `USE_NCURSES` flag to build with full ncurses/PDCurses capabilities.
+
+### GCC (MinGW / Linux)
+```bash
+# Compile Standard ANSI Engine (Recommended for quick testing)
+gcc main.c graphics.c object_manager.c file_manager.c layer_manager.c analytics.c utils.c -lm -o ascii_studio
+
+# Compile Ncurses/PDCurses Engine
+gcc -DUSE_NCURSES main.c graphics.c object_manager.c file_manager.c layer_manager.c analytics.c utils.c -lncurses -lm -o ascii_studio
+```
+
+### MSVC (cl.exe compiler)
+```cmd
+cl main.c graphics.c object_manager.c file_manager.c layer_manager.c analytics.c utils.c /D_CRT_SECURE_NO_WARNINGS /Fe:ascii_studio.exe
+```
+
+---
+
+## 6. Interactive Visual Editor Controls (Mode 8)
+
+When in **Display Canvas** mode, use the following controls:
+* **WASD / Arrow Keys**: Translate / move selected object.
+* **Tab**: Cycles selection highlights through active shapes.
+* **+ / -**: Scale selected shape size up / down.
+* **[ / ]**: Resize width / height proportions.
+* **L**: Locks / Unlocks coordinates of chosen shape.
+* **H**: Hides / Shows selected shape.
+* **C / V**: Copy to clipboard / Paste clipboard onto active layer.
+* **D**: Duplicate selected object.
+* **X / Delete**: Remove active shape from vector registry.
+* **U / R**: Multi-step Undo & Redo.
+* **G**: Toggles grid lines overlay.
+* **S**: Fast Save project to `data/autosave.aststudio`.
+* **E**: Fast Export current canvas composition to `canvas_export.txt`.
+* **ESC / M**: Return to main navigation menu.
+
+---
+
+## 7. 20-Day Progressive Development Roadmap
+
+* **Day 1: Setup and Directory Tree Initialization**
+  * *Commit Message*: `feat: setup directory layout and add blank headers`
+* **Day 2: Terminal Abstractor & Windows ANSI Engine**
+  * *Commit Message*: `feat: add virtual terminal ANSI mode loader in utils.c`
+* **Day 3: Coordinate Conversions & Math Helpers**
+  * *Commit Message*: `feat: implement parse_int, range validators, and clock formatting`
+* **Day 4: Bresenham Line Drawing Logic**
+  * *Commit Message*: `feat: implement integer Bresenham line algorithm in graphics.c`
+* **Day 5: Midpoint Circle Algorithm**
+  * *Commit Message*: `feat: implement midpoint circle boundary and fill span plotting`
+* **Day 6: Midpoint Ellipse Algorithm**
+  * *Commit Message*: `feat: implement midpoint ellipse plotting with pure integer math`
+* **Day 7: Scanline Polygon Fill**
+  * *Commit Message*: `feat: implement edge list calculations and scanline fill for polygons`
+* **Day 8: Object Manager Structures & Registry Setup**
+  * *Commit Message*: `feat: define ShapeParams union and initialize object array database`
+* **Day 9: Shape Creation Operations (CRUD)**
+  * *Commit Message*: `feat: write create routines for line, rect, circle, ellipse, triangle`
+* **Day 10: State-Based Undo/Redo Engine**
+  * *Commit Message*: `feat: implement history stack save, undo, and redo states`
+* **Day 11: Translation and Resizing Math**
+  * *Commit Message*: `feat: add coordinate translation and parameter resizing rules`
+* **Day 12: Scaling and Centroid Triangulation Rotation**
+  * *Commit Message*: `feat: implement centroid calculation, shape scaling, and triangle rotation`
+* **Day 13: Horizontal and Vertical Mirroring**
+  * *Commit Message*: `feat: implement H/V mirror equations relative to canvas center`
+* **Day 14: Clipboard Copier & Paste Engine**
+  * *Commit Message*: `feat: add copy, paste, duplicate tools and lock toggling`
+* **Day 15: Layer Controller & Rendering compositor**
+  * *Commit Message*: `feat: create layer manager with visibility tracking and sorting`
+* **Day 16: Project Serialization Format**
+  * *Commit Message*: `feat: implement save and load parser for aststudio format`
+* **Day 17: Canvas Exporter & Autosave Loop Hooks**
+  * *Commit Message*: `feat: add txt canvas export and automatic backup on edit`
+* **Day 18: Diagnostics & Dashboard Scoring**
+  * *Commit Message*: `feat: implement complexity score calculations and memory trackers`
+* **Day 19: Main Loop and Interactive Console Menus**
+  * *Commit Message*: `feat: orchestrate main loop menus, user inputs, and help guide`
+* **Day 20: Visual Interactive Mode Integration**
+  * *Commit Message*: `feat: combine compositor render and keyboard event listener loop`
